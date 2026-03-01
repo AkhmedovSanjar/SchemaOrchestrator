@@ -158,6 +158,8 @@ await dbContext.UpgradeSchemaAsync(new UpgradeOptions
     EnableDataSubscribers = true,
     DryRun = false
 });
+
+var cleaned = await dbContext.CleanupArchivedObjectsAsync();
 ```
 
 ## Current status
@@ -167,3 +169,6 @@ await dbContext.UpgradeSchemaAsync(new UpgradeOptions
 - Shared metadata-table archive pattern implemented (`so_archived_objects`)
 - Upgrade lifecycle tables implemented (`so_upgrade_history`, `so_locks`)
 - EF Core extension methods implemented (`AddSchemaOrchestrator`, `UpgradeSchemaAsync`)
+- Type/nullability change detection implemented (`AlterColumn` operation)
+- Subscriber hook pipeline implemented (`ISchemaUpgradeSubscriber`)
+- TTL cleanup worker implemented (`CleanupArchivedObjectsAsync`)

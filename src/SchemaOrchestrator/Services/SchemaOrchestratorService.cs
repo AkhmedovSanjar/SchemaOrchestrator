@@ -11,17 +11,20 @@ public sealed class SchemaOrchestratorService : ISchemaOrchestrator
 {
     private readonly ProviderResolver _providerResolver;
     private readonly ISchemaComparer _schemaComparer;
+    private readonly IReadOnlyList<ISchemaUpgradeSubscriber> _subscribers;
     private readonly SchemaOrchestratorOptions _options;
     private readonly ILogger<SchemaOrchestratorService> _logger;
 
     public SchemaOrchestratorService(
         ProviderResolver providerResolver,
         ISchemaComparer schemaComparer,
+        IEnumerable<ISchemaUpgradeSubscriber> subscribers,
         IOptions<SchemaOrchestratorOptions> options,
         ILogger<SchemaOrchestratorService> logger)
     {
         _providerResolver = providerResolver;
         _schemaComparer = schemaComparer;
+        _subscribers = subscribers.ToArray();
         _options = options.Value;
         _logger = logger;
     }
@@ -35,6 +38,8 @@ public sealed class SchemaOrchestratorService : ISchemaOrchestrator
         var connection = dbContext.Database.GetDbConnection();
 
         var owner = Environment.MachineName + ":" + Guid.NewGuid().ToString("N");
+        var subscriberContext = new UpgradeSubscriberContext(adapter.Name, options.DryRun, options.Features);
+
         long historyId = 0;
         var executedCount = 0;
 
@@ -48,6 +53,14 @@ public sealed class SchemaOrchestratorService : ISchemaOrchestrator
             }
 
             historyId = await adapter.StartUpgradeHistoryAsync(connection, options.DryRun, cancellationToken);
+
+            if (options.EnableDataSubscribers)
+            {
+                foreach (var subscriber in _subscribers)
+                {
+                    await subscriber.OnUpgradeStartedAsync(dbContext, connection, subscriberContext, cancellationToken);
+                }
+            }
 
             var currentSchema = await adapter.ReadCurrentSchemaAsync(connection, cancellationToken);
             var desiredSchema = EfModelSchemaBuilder.Build(dbContext, adapter.DefaultSchema);
@@ -65,13 +78,38 @@ public sealed class SchemaOrchestratorService : ISchemaOrchestrator
             {
                 foreach (var operation in operations)
                 {
+                    if (options.EnableDataSubscribers)
+                    {
+                        foreach (var subscriber in _subscribers)
+                        {
+                            await subscriber.BeforeOperationAsync(dbContext, connection, subscriberContext, operation, cancellationToken);
+                        }
+                    }
+
                     await ExecuteOperationAsync(connection, adapter, operation, cancellationToken);
                     executedCount++;
+
+                    if (options.EnableDataSubscribers)
+                    {
+                        foreach (var subscriber in _subscribers)
+                        {
+                            await subscriber.AfterOperationAsync(dbContext, connection, subscriberContext, operation, cancellationToken);
+                        }
+                    }
                 }
             }
 
             report.ExecutedOperations = executedCount;
             await adapter.CompleteUpgradeHistoryAsync(connection, historyId, executedCount, "completed", null, cancellationToken);
+
+            if (options.EnableDataSubscribers)
+            {
+                foreach (var subscriber in _subscribers)
+                {
+                    await subscriber.OnUpgradeCompletedAsync(dbContext, connection, subscriberContext, report, cancellationToken);
+                }
+            }
+
             return report;
         }
         catch (Exception ex)
@@ -80,6 +118,14 @@ public sealed class SchemaOrchestratorService : ISchemaOrchestrator
             if (historyId > 0)
             {
                 await adapter.CompleteUpgradeHistoryAsync(connection, historyId, executedCount, "failed", ex.Message, cancellationToken);
+            }
+
+            if (options.EnableDataSubscribers)
+            {
+                foreach (var subscriber in _subscribers)
+                {
+                    await subscriber.OnUpgradeFailedAsync(dbContext, connection, subscriberContext, ex, cancellationToken);
+                }
             }
 
             throw;
@@ -97,69 +143,91 @@ public sealed class SchemaOrchestratorService : ISchemaOrchestrator
 
     private async Task ExecuteOperationAsync(DbConnection connection, IProviderAdapter adapter, SchemaOperation operation, CancellationToken cancellationToken)
     {
-        string sql;
         switch (operation.Kind)
         {
             case SchemaOperationKind.CreateTable:
-                sql = adapter.BuildCreateTableSql(operation.TableDefinition!);
-                break;
+                await ExecuteNonQueryAsync(connection, adapter.BuildCreateTableSql(operation.TableDefinition!), cancellationToken);
+                return;
 
             case SchemaOperationKind.AddColumn:
-                sql = adapter.BuildAddColumnSql(operation.TableDefinition!, operation.ColumnDefinition!);
-                break;
+                await ExecuteNonQueryAsync(connection, adapter.BuildAddColumnSql(operation.TableDefinition!, operation.ColumnDefinition!), cancellationToken);
+                return;
+
+            case SchemaOperationKind.AlterColumn:
+                await ExecuteAlterColumnAsync(connection, adapter, operation, cancellationToken);
+                return;
 
             case SchemaOperationKind.ArchiveTable:
-                sql = BuildArchiveTableSql(adapter, operation, out var tableArchiveName);
-                await ExecuteNonQueryAsync(connection, sql, cancellationToken);
-                await adapter.RecordArchivedObjectAsync(
-                    connection,
-                    "table",
-                    operation.Schema,
-                    operation.Table,
-                    null,
-                    tableArchiveName,
-                    DateTime.UtcNow,
-                    DateTime.UtcNow.Add(_options.ArchiveTtl),
-                    cancellationToken);
+                await ArchiveTableAsync(connection, adapter, operation, cancellationToken);
                 return;
 
             case SchemaOperationKind.ArchiveColumn:
-                sql = BuildArchiveColumnSql(adapter, operation, out var columnArchiveName);
-                await ExecuteNonQueryAsync(connection, sql, cancellationToken);
-                await adapter.RecordArchivedObjectAsync(
-                    connection,
-                    "column",
-                    operation.Schema,
-                    operation.Table,
-                    operation.Column,
-                    columnArchiveName,
-                    DateTime.UtcNow,
-                    DateTime.UtcNow.Add(_options.ArchiveTtl),
-                    cancellationToken);
+                await ArchiveColumnAsync(connection, adapter, operation, cancellationToken);
                 return;
 
             default:
                 throw new NotSupportedException($"Operation kind '{operation.Kind}' is not supported.");
         }
-
-        await ExecuteNonQueryAsync(connection, sql, cancellationToken);
     }
 
-    private static string BuildArchiveTableSql(IProviderAdapter adapter, SchemaOperation operation, out string archiveName)
+    private async Task ExecuteAlterColumnAsync(DbConnection connection, IProviderAdapter adapter, SchemaOperation operation, CancellationToken cancellationToken)
     {
-        archiveName = $"Deleted_{operation.Table}_{DateTime.UtcNow:yyyyMMddHHmmss}";
-        return adapter.BuildRenameTableSql(operation.Schema, operation.Table, archiveName);
+        if (operation.ColumnDefinition is null || operation.CurrentColumnDefinition is null || operation.TableDefinition is null)
+        {
+            throw new InvalidOperationException("AlterColumn operation requires current and desired column definitions.");
+        }
+
+        if (adapter.SupportsInPlaceColumnAlter)
+        {
+            var sql = adapter.BuildAlterColumnSql(operation.TableDefinition, operation.CurrentColumnDefinition, operation.ColumnDefinition);
+            await ExecuteNonQueryAsync(connection, sql, cancellationToken);
+            return;
+        }
+
+        await ArchiveColumnAsync(connection, adapter, operation, cancellationToken);
+        var addSql = adapter.BuildAddColumnSql(operation.TableDefinition, operation.ColumnDefinition);
+        await ExecuteNonQueryAsync(connection, addSql, cancellationToken);
     }
 
-    private static string BuildArchiveColumnSql(IProviderAdapter adapter, SchemaOperation operation, out string archiveName)
+    private async Task ArchiveTableAsync(DbConnection connection, IProviderAdapter adapter, SchemaOperation operation, CancellationToken cancellationToken)
+    {
+        var archiveName = $"Deleted_{operation.Table}_{DateTime.UtcNow:yyyyMMddHHmmss}";
+        var sql = adapter.BuildRenameTableSql(operation.Schema, operation.Table, archiveName);
+        await ExecuteNonQueryAsync(connection, sql, cancellationToken);
+
+        await adapter.RecordArchivedObjectAsync(
+            connection,
+            "table",
+            operation.Schema,
+            operation.Table,
+            null,
+            archiveName,
+            DateTime.UtcNow,
+            DateTime.UtcNow.Add(_options.ArchiveTtl),
+            cancellationToken);
+    }
+
+    private async Task ArchiveColumnAsync(DbConnection connection, IProviderAdapter adapter, SchemaOperation operation, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(operation.Column))
         {
             throw new InvalidOperationException("ArchiveColumn operation requires Column value.");
         }
 
-        archiveName = $"Deleted_{operation.Column}_{DateTime.UtcNow:yyyyMMddHHmmss}";
-        return adapter.BuildRenameColumnSql(operation.Schema, operation.Table, operation.Column, archiveName);
+        var archiveName = $"Deleted_{operation.Column}_{DateTime.UtcNow:yyyyMMddHHmmss}";
+        var sql = adapter.BuildRenameColumnSql(operation.Schema, operation.Table, operation.Column, archiveName);
+        await ExecuteNonQueryAsync(connection, sql, cancellationToken);
+
+        await adapter.RecordArchivedObjectAsync(
+            connection,
+            "column",
+            operation.Schema,
+            operation.Table,
+            operation.Column,
+            archiveName,
+            DateTime.UtcNow,
+            DateTime.UtcNow.Add(_options.ArchiveTtl),
+            cancellationToken);
     }
 
     private static async Task ExecuteNonQueryAsync(DbConnection connection, string sql, CancellationToken cancellationToken)

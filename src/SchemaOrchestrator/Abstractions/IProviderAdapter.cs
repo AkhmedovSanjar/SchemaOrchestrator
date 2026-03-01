@@ -20,10 +20,14 @@ public interface IProviderAdapter
     Task<DatabaseSchema> ReadCurrentSchemaAsync(DbConnection connection, CancellationToken cancellationToken);
 
     string QuoteIdentifier(string identifier);
+    bool SupportsInPlaceColumnAlter { get; }
     string BuildCreateTableSql(TableSchema table);
     string BuildAddColumnSql(TableSchema table, ColumnSchema column);
+    string BuildAlterColumnSql(TableSchema table, ColumnSchema currentColumn, ColumnSchema desiredColumn);
     string BuildRenameTableSql(string schema, string table, string newTableName);
     string BuildRenameColumnSql(string schema, string table, string column, string newColumnName);
+    string BuildDropTableSql(string schema, string table);
+    string BuildDropColumnSql(string schema, string table, string column);
 
     Task RecordArchivedObjectAsync(
         DbConnection connection,

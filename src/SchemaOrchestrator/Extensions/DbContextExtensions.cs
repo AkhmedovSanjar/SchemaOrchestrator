@@ -13,4 +13,10 @@ public static class DbContextExtensions
         var service = dbContext.GetService<ISchemaOrchestrator>();
         return service.UpgradeSchemaAsync(dbContext, options, cancellationToken);
     }
+
+    public static Task<int> CleanupArchivedObjectsAsync(this DbContext dbContext, CancellationToken cancellationToken = default)
+    {
+        var service = dbContext.GetService<ISchemaCleanupWorker>();
+        return service.CleanupArchivedObjectsAsync(dbContext, cancellationToken);
+    }
 }

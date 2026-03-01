@@ -29,13 +29,26 @@ public sealed class SchemaComparer : ISchemaComparer
 
             foreach (var desiredColumn in desiredTable.Columns)
             {
-                if (!currentColumns.ContainsKey(desiredColumn.Name))
+                if (!currentColumns.TryGetValue(desiredColumn.Name, out var currentColumn))
                 {
                     operations.Add(new SchemaOperation(
                         Kind: SchemaOperationKind.AddColumn,
                         Schema: desiredTable.Schema,
                         Table: desiredTable.Name,
                         Column: desiredColumn.Name,
+                        ColumnDefinition: desiredColumn,
+                        TableDefinition: desiredTable));
+                    continue;
+                }
+
+                if (HasDefinitionChanged(currentColumn, desiredColumn))
+                {
+                    operations.Add(new SchemaOperation(
+                        Kind: SchemaOperationKind.AlterColumn,
+                        Schema: desiredTable.Schema,
+                        Table: desiredTable.Name,
+                        Column: desiredColumn.Name,
+                        CurrentColumnDefinition: currentColumn,
                         ColumnDefinition: desiredColumn,
                         TableDefinition: desiredTable));
                 }
@@ -85,4 +98,12 @@ public sealed class SchemaComparer : ISchemaComparer
 
     private static bool IsOrchestratorInternalColumn(string columnName) =>
         columnName.StartsWith("so_", StringComparison.OrdinalIgnoreCase);
+
+    private static bool HasDefinitionChanged(ColumnSchema current, ColumnSchema desired)
+    {
+        return !string.Equals(NormalizeStoreType(current.StoreType), NormalizeStoreType(desired.StoreType), StringComparison.OrdinalIgnoreCase)
+            || current.IsNullable != desired.IsNullable;
+    }
+
+    private static string NormalizeStoreType(string value) => value.Replace(" ", string.Empty);
 }

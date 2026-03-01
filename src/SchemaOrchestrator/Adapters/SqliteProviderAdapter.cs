@@ -7,6 +7,7 @@ public sealed class SqliteProviderAdapter : ProviderAdapterBase
 {
     public override string Name => "sqlite";
     public override string DefaultSchema => "main";
+    public override bool SupportsInPlaceColumnAlter => false;
 
     public override bool CanHandle(string providerName) =>
         providerName.Contains("Sqlite", StringComparison.OrdinalIgnoreCase);
@@ -99,11 +100,20 @@ CREATE TABLE IF NOT EXISTS so_locks (
     public override string BuildAddColumnSql(TableSchema table, ColumnSchema column) =>
         $"ALTER TABLE {QuoteIdentifier(table.Name)} ADD COLUMN {BuildColumnDefinition(column)};";
 
+    public override string BuildAlterColumnSql(TableSchema table, ColumnSchema currentColumn, ColumnSchema desiredColumn) =>
+        throw new NotSupportedException("SQLite in-place alter column is not supported by this adapter.");
+
     public override string BuildRenameTableSql(string schema, string table, string newTableName) =>
         $"ALTER TABLE {QuoteIdentifier(table)} RENAME TO {QuoteIdentifier(newTableName)};";
 
     public override string BuildRenameColumnSql(string schema, string table, string column, string newColumnName) =>
         $"ALTER TABLE {QuoteIdentifier(table)} RENAME COLUMN {QuoteIdentifier(column)} TO {QuoteIdentifier(newColumnName)};";
+
+    public override string BuildDropTableSql(string schema, string table) =>
+        $"DROP TABLE {QuoteIdentifier(table)};";
+
+    public override string BuildDropColumnSql(string schema, string table, string column) =>
+        $"ALTER TABLE {QuoteIdentifier(table)} DROP COLUMN {QuoteIdentifier(column)};";
 
     protected override string BuildStartHistorySql() =>
         "INSERT INTO so_upgrade_history(started_at_utc, provider, status, dry_run) VALUES (@started_at_utc, @provider, @status, @dry_run); SELECT last_insert_rowid();";

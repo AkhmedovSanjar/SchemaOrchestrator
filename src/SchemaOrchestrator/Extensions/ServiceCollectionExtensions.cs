@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using SchemaOrchestrator.Abstractions;
 using SchemaOrchestrator.Adapters;
 using SchemaOrchestrator.Models;
@@ -24,6 +25,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ProviderResolver>();
         services.AddSingleton<ISchemaComparer, SchemaComparer>();
         services.AddScoped<ISchemaOrchestrator, SchemaOrchestratorService>();
+        services.AddScoped<ISchemaCleanupWorker, SchemaCleanupWorker>();
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<ISchemaUpgradeSubscriber, NoOpSchemaUpgradeSubscriber>());
 
         return services;
     }

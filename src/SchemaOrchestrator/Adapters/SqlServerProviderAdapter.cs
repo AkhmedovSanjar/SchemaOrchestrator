@@ -7,6 +7,7 @@ public sealed class SqlServerProviderAdapter : ProviderAdapterBase
 {
     public override string Name => "sqlserver";
     public override string DefaultSchema => "dbo";
+    public override bool SupportsInPlaceColumnAlter => true;
 
     public override bool CanHandle(string providerName) =>
         providerName.Contains("SqlServer", StringComparison.OrdinalIgnoreCase);
@@ -122,11 +123,24 @@ WHERE t.TABLE_TYPE = 'BASE TABLE';";
         return $"ALTER TABLE {schemaPrefix}{QuoteIdentifier(table.Name)} ADD {BuildColumnDefinition(column)};";
     }
 
+    public override string BuildAlterColumnSql(TableSchema table, ColumnSchema currentColumn, ColumnSchema desiredColumn)
+    {
+        var schemaPrefix = QuoteIdentifier(table.Schema) + ".";
+        var nullableToken = desiredColumn.IsNullable ? "NULL" : "NOT NULL";
+        return $"ALTER TABLE {schemaPrefix}{QuoteIdentifier(table.Name)} ALTER COLUMN {QuoteIdentifier(desiredColumn.Name)} {desiredColumn.StoreType} {nullableToken};";
+    }
+
     public override string BuildRenameTableSql(string schema, string table, string newTableName) =>
         $"EXEC sp_rename '{schema}.{table}', '{newTableName}';";
 
     public override string BuildRenameColumnSql(string schema, string table, string column, string newColumnName) =>
         $"EXEC sp_rename '{schema}.{table}.{column}', '{newColumnName}', 'COLUMN';";
+
+    public override string BuildDropTableSql(string schema, string table) =>
+        $"DROP TABLE {QuoteIdentifier(schema)}.{QuoteIdentifier(table)};";
+
+    public override string BuildDropColumnSql(string schema, string table, string column) =>
+        $"ALTER TABLE {QuoteIdentifier(schema)}.{QuoteIdentifier(table)} DROP COLUMN {QuoteIdentifier(column)};";
 
     protected override string BuildStartHistorySql() =>
         "INSERT INTO so_upgrade_history(started_at_utc, provider, status, dry_run) VALUES (@started_at_utc, @provider, @status, @dry_run); SELECT CAST(SCOPE_IDENTITY() AS BIGINT);";

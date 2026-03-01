@@ -16,10 +16,14 @@ public abstract class ProviderAdapterBase : IProviderAdapter
     public abstract Task<DatabaseSchema> ReadCurrentSchemaAsync(DbConnection connection, CancellationToken cancellationToken);
 
     public abstract string QuoteIdentifier(string identifier);
+    public abstract bool SupportsInPlaceColumnAlter { get; }
     public abstract string BuildCreateTableSql(TableSchema table);
     public abstract string BuildAddColumnSql(TableSchema table, ColumnSchema column);
+    public abstract string BuildAlterColumnSql(TableSchema table, ColumnSchema currentColumn, ColumnSchema desiredColumn);
     public abstract string BuildRenameTableSql(string schema, string table, string newTableName);
     public abstract string BuildRenameColumnSql(string schema, string table, string column, string newColumnName);
+    public abstract string BuildDropTableSql(string schema, string table);
+    public abstract string BuildDropColumnSql(string schema, string table, string column);
 
     protected abstract string BuildStartHistorySql();
     protected abstract string BuildAcquireLockSql();

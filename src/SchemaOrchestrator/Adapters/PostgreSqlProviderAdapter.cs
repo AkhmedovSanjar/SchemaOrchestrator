@@ -7,6 +7,7 @@ public sealed class PostgreSqlProviderAdapter : ProviderAdapterBase
 {
     public override string Name => "postgresql";
     public override string DefaultSchema => "public";
+    public override bool SupportsInPlaceColumnAlter => true;
 
     public override bool CanHandle(string providerName) =>
         providerName.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) ||
@@ -115,11 +116,29 @@ WHERE t.table_type = 'BASE TABLE'
         return $"ALTER TABLE {prefix}{QuoteIdentifier(table.Name)} ADD COLUMN {BuildColumnDefinition(column)};";
     }
 
+    public override string BuildAlterColumnSql(TableSchema table, ColumnSchema currentColumn, ColumnSchema desiredColumn)
+    {
+        var prefix = QuoteIdentifier(table.Schema) + ".";
+        var nullableSql = desiredColumn.IsNullable
+            ? $"ALTER TABLE {prefix}{QuoteIdentifier(table.Name)} ALTER COLUMN {QuoteIdentifier(desiredColumn.Name)} DROP NOT NULL;"
+            : $"ALTER TABLE {prefix}{QuoteIdentifier(table.Name)} ALTER COLUMN {QuoteIdentifier(desiredColumn.Name)} SET NOT NULL;";
+
+        return
+            $"ALTER TABLE {prefix}{QuoteIdentifier(table.Name)} ALTER COLUMN {QuoteIdentifier(desiredColumn.Name)} TYPE {desiredColumn.StoreType}; " +
+            nullableSql;
+    }
+
     public override string BuildRenameTableSql(string schema, string table, string newTableName) =>
         $"ALTER TABLE {QuoteIdentifier(schema)}.{QuoteIdentifier(table)} RENAME TO {QuoteIdentifier(newTableName)};";
 
     public override string BuildRenameColumnSql(string schema, string table, string column, string newColumnName) =>
         $"ALTER TABLE {QuoteIdentifier(schema)}.{QuoteIdentifier(table)} RENAME COLUMN {QuoteIdentifier(column)} TO {QuoteIdentifier(newColumnName)};";
+
+    public override string BuildDropTableSql(string schema, string table) =>
+        $"DROP TABLE {QuoteIdentifier(schema)}.{QuoteIdentifier(table)};";
+
+    public override string BuildDropColumnSql(string schema, string table, string column) =>
+        $"ALTER TABLE {QuoteIdentifier(schema)}.{QuoteIdentifier(table)} DROP COLUMN {QuoteIdentifier(column)};";
 
     protected override string BuildStartHistorySql() =>
         "INSERT INTO so_upgrade_history(started_at_utc, provider, status, dry_run) VALUES (@started_at_utc, @provider, @status, @dry_run) RETURNING id;";
