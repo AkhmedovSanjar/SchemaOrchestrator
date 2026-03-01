@@ -179,6 +179,30 @@ var cleaned = await dbContext.CleanupArchivedObjectsAsync();
 - Restore/undelete API implemented (`RestoreArchivedObjectAsync`)
 - Operation checkpoint table implemented (`so_upgrade_operations`)
 
+## Test layout
+
+Tests are organized by purpose and provider:
+
+- `tests/SchemaOrchestrator.Tests/Common`
+- `tests/SchemaOrchestrator.Tests/Pipeline/Ordering`
+- `tests/SchemaOrchestrator.Tests/Providers/Sqlite/Schema`
+- `tests/SchemaOrchestrator.Tests/Providers/Sqlite/Cleanup`
+- `tests/SchemaOrchestrator.Tests/Providers/Sqlite/Diagnostics`
+- `tests/SchemaOrchestrator.Tests/Providers/Sqlite/Capabilities`
+- `tests/SchemaOrchestrator.Tests/Providers/SqlServer/Schema`
+- `tests/SchemaOrchestrator.Tests/Providers/SqlServer/Cleanup`
+- `tests/SchemaOrchestrator.Tests/Providers/SqlServer/Diagnostics`
+- `tests/SchemaOrchestrator.Tests/Providers/SqlServer/Capabilities`
+- `tests/SchemaOrchestrator.Tests/Providers/PostgreSql/Schema`
+- `tests/SchemaOrchestrator.Tests/Providers/PostgreSql/Cleanup`
+- `tests/SchemaOrchestrator.Tests/Providers/PostgreSql/Diagnostics`
+- `tests/SchemaOrchestrator.Tests/Providers/PostgreSql/Capabilities`
+
+Provider integration tests use environment variables:
+
+- `SO_TEST_SQLSERVER_CONN`
+- `SO_TEST_POSTGRES_CONN`
+
 ## Tracked implementation checklist
 
 - [x] Step 1: True temporary snapshot from EF create script and live-vs-temp comparison

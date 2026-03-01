@@ -1,9 +1,9 @@
 using SchemaOrchestrator.Models;
 using SchemaOrchestrator.Services;
 
-namespace SchemaOrchestrator.Tests;
+namespace SchemaOrchestrator.Tests.Pipeline.Ordering;
 
-public class ComparerOrderingTests
+public class ForeignKeyOrderingTests
 {
     [Fact]
     public void Compare_OrdersForeignKeyAroundColumnChange()
