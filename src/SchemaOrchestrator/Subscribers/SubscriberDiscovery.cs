@@ -20,7 +20,7 @@ internal static class SubscriberDiscovery
 
         foreach (var assembly in assemblies.Distinct())
         {
-            foreach (var type in assembly.GetTypes().Where(t => t.IsClass && !t.IsAbstract))
+            foreach (var type in assembly.GetExportedTypes().Where(t => t.IsClass && !t.IsAbstract))
             {
                 var methods = type
                     .GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)

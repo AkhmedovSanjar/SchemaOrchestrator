@@ -170,3 +170,4 @@ internal sealed class PostgreFkChildV2
     public int Id { get; set; }
     public long ParentId { get; set; }
 }
+

@@ -170,3 +170,4 @@ internal sealed class SqlServerFkChildV2
     public int Id { get; set; }
     public long ParentId { get; set; }
 }
+

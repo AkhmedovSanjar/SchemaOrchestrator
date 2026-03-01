@@ -180,6 +180,84 @@ internal sealed class SqliteFkV2Context : DbContext
     }
 }
 
+internal sealed class SqliteLargeSchemaV1Context : DbContext
+{
+    public SqliteLargeSchemaV1Context(DbContextOptions<SqliteLargeSchemaV1Context> options) : base(options)
+    {
+    }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        for (var i = 1; i <= 20; i++)
+        {
+            var entity = modelBuilder.SharedTypeEntity<Dictionary<string, object>>($"LargeEntity{i}");
+            entity.ToTable($"LargeTable{i}");
+            entity.Property<int>("Id");
+            entity.HasKey("Id");
+            entity.Property<string>("Name").HasMaxLength(100);
+        }
+    }
+}
+
+internal sealed class SqliteLargeSchemaV2Context : DbContext
+{
+    public SqliteLargeSchemaV2Context(DbContextOptions<SqliteLargeSchemaV2Context> options) : base(options)
+    {
+    }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        for (var i = 1; i <= 20; i++)
+        {
+            var entity = modelBuilder.SharedTypeEntity<Dictionary<string, object>>($"LargeEntity{i}");
+            entity.ToTable($"LargeTable{i}");
+            entity.Property<int>("Id");
+            entity.HasKey("Id");
+            entity.Property<string>("Name").HasMaxLength(120);
+            entity.Property<string>("Extra").HasMaxLength(50);
+            entity.HasIndex("Name").HasDatabaseName($"IX_LargeTable{i}_Name");
+        }
+    }
+}
+
+internal sealed class SqliteConstraintV1Context : DbContext
+{
+    public SqliteConstraintV1Context(DbContextOptions<SqliteConstraintV1Context> options) : base(options) { }
+    public DbSet<ConstraintEntityV1> Items => Set<ConstraintEntityV1>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ConstraintEntityV1>(b =>
+        {
+            b.ToTable("ConstraintItems");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Code).HasMaxLength(50);
+            b.HasIndex(x => x.Code).IsUnique().HasDatabaseName("UX_ConstraintItems_Code");
+            b.ToTable(t => t.HasCheckConstraint("CK_Code_NotEmpty", "length(Code) > 0"));
+            b.Property(x => x.Rank).HasDefaultValue(1);
+        });
+    }
+}
+
+internal sealed class SqliteConstraintV2Context : DbContext
+{
+    public SqliteConstraintV2Context(DbContextOptions<SqliteConstraintV2Context> options) : base(options) { }
+    public DbSet<ConstraintEntityV2> Items => Set<ConstraintEntityV2>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ConstraintEntityV2>(b =>
+        {
+            b.ToTable("ConstraintItems");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Code).HasMaxLength(80);
+            b.HasIndex(x => x.Code).IsUnique().HasDatabaseName("UX_ConstraintItems_Code_V2");
+            b.ToTable(t => t.HasCheckConstraint("CK_Code_NotEmpty_V2", "length(Code) >= 1"));
+            b.Property(x => x.Rank).HasDefaultValue(2);
+        });
+    }
+}
+
 internal sealed class PersonNameOnly
 {
     public int Id { get; set; }
@@ -238,3 +316,18 @@ internal sealed class FkChildV2
     public int Id { get; set; }
     public long ParentId { get; set; }
 }
+
+internal sealed class ConstraintEntityV1
+{
+    public int Id { get; set; }
+    public string Code { get; set; } = string.Empty;
+    public int Rank { get; set; }
+}
+
+internal sealed class ConstraintEntityV2
+{
+    public int Id { get; set; }
+    public string Code { get; set; } = string.Empty;
+    public int Rank { get; set; }
+}
+

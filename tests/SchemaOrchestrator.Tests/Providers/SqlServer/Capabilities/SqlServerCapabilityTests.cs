@@ -35,3 +35,5 @@ public class SqlServerCapabilityTests
         Assert.Contains(report.PlannedOperations, o => o.Kind == SchemaOperationKind.CreateForeignKey);
     }
 }
+
+

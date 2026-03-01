@@ -35,3 +35,5 @@ public class PostgreSqlCapabilityTests
         Assert.Contains(report.PlannedOperations, o => o.Kind == SchemaOperationKind.CreateForeignKey);
     }
 }
+
+

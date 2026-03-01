@@ -52,3 +52,5 @@ public class PostgreSqlDiagnosticsTests
         Assert.True(opCount >= report.ExecutedOperations);
     }
 }
+
+

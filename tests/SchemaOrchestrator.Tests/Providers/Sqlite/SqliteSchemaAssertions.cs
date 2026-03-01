@@ -36,3 +36,4 @@ internal static class SqliteSchemaAssertions
         return Convert.ToInt32(value);
     }
 }
+

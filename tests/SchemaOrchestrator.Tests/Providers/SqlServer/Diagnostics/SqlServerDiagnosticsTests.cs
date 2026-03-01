@@ -52,3 +52,5 @@ public class SqlServerDiagnosticsTests
         Assert.True(opCount >= report.ExecutedOperations);
     }
 }
+
+
