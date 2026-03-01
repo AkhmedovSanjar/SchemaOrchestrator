@@ -139,6 +139,61 @@ WHERE schemaname NOT IN ('pg_catalog', 'information_schema');";
             }
         }
 
+        var foreignKeys = new List<ForeignKeySchema>();
+        await using (var fkCmd = connection.CreateCommand())
+        {
+            fkCmd.CommandText = @"
+SELECT
+    tc.table_schema,
+    tc.table_name,
+    tc.constraint_name,
+    ccu.table_schema AS foreign_table_schema,
+    ccu.table_name AS foreign_table_name,
+    kcu.column_name,
+    ccu.column_name AS foreign_column_name,
+    kcu.ordinal_position
+FROM information_schema.table_constraints tc
+JOIN information_schema.key_column_usage kcu
+  ON tc.constraint_name = kcu.constraint_name
+ AND tc.table_schema = kcu.table_schema
+JOIN information_schema.constraint_column_usage ccu
+  ON ccu.constraint_name = tc.constraint_name
+ AND ccu.constraint_schema = tc.table_schema
+WHERE tc.constraint_type = 'FOREIGN KEY';";
+
+            await using var fkReader = await fkCmd.ExecuteReaderAsync(cancellationToken);
+            var grouped = new Dictionary<string, (string Schema, string Table, string Name, string RefSchema, string RefTable, List<(int Ord, string Col, string RefCol)> Cols)>(StringComparer.OrdinalIgnoreCase);
+            while (await fkReader.ReadAsync(cancellationToken))
+            {
+                var schema = fkReader.GetString(0);
+                var table = fkReader.GetString(1);
+                var name = fkReader.GetString(2);
+                var refSchema = fkReader.GetString(3);
+                var refTable = fkReader.GetString(4);
+                var col = fkReader.GetString(5);
+                var refCol = fkReader.GetString(6);
+                var ord = Convert.ToInt32(fkReader.GetValue(7), System.Globalization.CultureInfo.InvariantCulture);
+                var key = $"{schema}.{table}.{name}";
+                if (!grouped.TryGetValue(key, out var state))
+                {
+                    state = (schema, table, name, refSchema, refTable, new List<(int, string, string)>());
+                }
+
+                state.Cols.Add((ord, col, refCol));
+                grouped[key] = state;
+            }
+
+            foreignKeys.AddRange(grouped.Values.Select(g =>
+                new ForeignKeySchema(
+                    g.Schema,
+                    g.Table,
+                    g.Name,
+                    g.Cols.OrderBy(x => x.Ord).Select(x => x.Col).ToArray(),
+                    g.RefSchema,
+                    g.RefTable,
+                    g.Cols.OrderBy(x => x.Ord).Select(x => x.RefCol).ToArray())));
+        }
+
         return new DatabaseSchema
         {
             Tables = tableMap.Select(kvp => new TableSchema
@@ -147,7 +202,8 @@ WHERE schemaname NOT IN ('pg_catalog', 'information_schema');";
                 Name = keyParts[kvp.Key].Table,
                 Columns = kvp.Value
             }).ToArray(),
-            Indexes = indexes
+            Indexes = indexes,
+            ForeignKeys = foreignKeys
         };
     }
 
@@ -187,6 +243,19 @@ WHERE schemaname NOT IN ('pg_catalog', 'information_schema');";
 
     public override string BuildDropIndexSql(IndexSchema index) =>
         $"DROP INDEX {QuoteIdentifier(index.Schema)}.{QuoteIdentifier(index.Name)};";
+
+    public override string BuildCreateForeignKeySql(ForeignKeySchema foreignKey)
+    {
+        var columns = string.Join(", ", foreignKey.Columns.Select(QuoteIdentifier));
+        var refColumns = string.Join(", ", foreignKey.PrincipalColumns.Select(QuoteIdentifier));
+        return
+            $"ALTER TABLE {QuoteIdentifier(foreignKey.Schema)}.{QuoteIdentifier(foreignKey.Table)} " +
+            $"ADD CONSTRAINT {QuoteIdentifier(foreignKey.Name)} FOREIGN KEY ({columns}) " +
+            $"REFERENCES {QuoteIdentifier(foreignKey.PrincipalSchema)}.{QuoteIdentifier(foreignKey.PrincipalTable)} ({refColumns});";
+    }
+
+    public override string BuildDropForeignKeySql(ForeignKeySchema foreignKey) =>
+        $"ALTER TABLE {QuoteIdentifier(foreignKey.Schema)}.{QuoteIdentifier(foreignKey.Table)} DROP CONSTRAINT {QuoteIdentifier(foreignKey.Name)};";
 
     public override string BuildRenameTableSql(string schema, string table, string newTableName) =>
         $"ALTER TABLE {QuoteIdentifier(schema)}.{QuoteIdentifier(table)} RENAME TO {QuoteIdentifier(newTableName)};";

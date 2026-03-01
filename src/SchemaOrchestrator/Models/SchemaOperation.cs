@@ -10,4 +10,5 @@ public sealed record SchemaOperation(
     TableSchema? CurrentTableDefinition = null,
     ColumnSchema? ColumnDefinition = null,
     TableSchema? TableDefinition = null,
-    IndexSchema? IndexDefinition = null);
+    IndexSchema? IndexDefinition = null,
+    ForeignKeySchema? ForeignKeyDefinition = null);

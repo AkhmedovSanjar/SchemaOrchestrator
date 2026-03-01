@@ -4,4 +4,5 @@ public sealed class DatabaseSchema
 {
     public IReadOnlyList<TableSchema> Tables { get; init; } = Array.Empty<TableSchema>();
     public IReadOnlyList<IndexSchema> Indexes { get; init; } = Array.Empty<IndexSchema>();
+    public IReadOnlyList<ForeignKeySchema> ForeignKeys { get; init; } = Array.Empty<ForeignKeySchema>();
 }

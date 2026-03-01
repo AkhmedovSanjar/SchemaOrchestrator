@@ -27,6 +27,8 @@ public interface IProviderAdapter
     string BuildAlterColumnSql(TableSchema table, ColumnSchema currentColumn, ColumnSchema desiredColumn);
     string BuildCreateIndexSql(IndexSchema index);
     string BuildDropIndexSql(IndexSchema index);
+    string BuildCreateForeignKeySql(ForeignKeySchema foreignKey);
+    string BuildDropForeignKeySql(ForeignKeySchema foreignKey);
     string BuildRenameTableSql(string schema, string table, string newTableName);
     string BuildRenameColumnSql(string schema, string table, string column, string newColumnName);
     string BuildDropTableSql(string schema, string table);

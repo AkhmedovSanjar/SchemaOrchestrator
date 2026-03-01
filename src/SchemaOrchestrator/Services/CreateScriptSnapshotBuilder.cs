@@ -12,6 +12,7 @@ internal static class CreateScriptSnapshotBuilder
         var statements = SplitStatements(script);
         var tables = new List<TableSchema>();
         var indexes = new List<IndexSchema>();
+        var foreignKeys = new List<ForeignKeySchema>();
 
         foreach (var statement in statements)
         {
@@ -30,12 +31,13 @@ internal static class CreateScriptSnapshotBuilder
                 continue;
             }
 
-            if (!TryParseTable(trimmed, defaultSchema, out var table))
+            if (!TryParseTable(trimmed, defaultSchema, out var table, out var tableForeignKeys))
             {
                 continue;
             }
 
             tables.Add(table);
+            foreignKeys.AddRange(tableForeignKeys);
         }
 
         return new DatabaseSchema
@@ -49,6 +51,11 @@ internal static class CreateScriptSnapshotBuilder
                 .GroupBy(i => i.Key, StringComparer.OrdinalIgnoreCase)
                 .Select(g => g.Last())
                 .OrderBy(i => i.Key, StringComparer.OrdinalIgnoreCase)
+                .ToArray(),
+            ForeignKeys = foreignKeys
+                .GroupBy(f => f.SignatureKey, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.Last())
+                .OrderBy(f => f.Key, StringComparer.OrdinalIgnoreCase)
                 .ToArray()
         };
     }
@@ -93,9 +100,10 @@ internal static class CreateScriptSnapshotBuilder
         return result;
     }
 
-    private static bool TryParseTable(string statement, string defaultSchema, out TableSchema table)
+    private static bool TryParseTable(string statement, string defaultSchema, out TableSchema table, out List<ForeignKeySchema> foreignKeys)
     {
         table = default!;
+        foreignKeys = new List<ForeignKeySchema>();
 
         var openParen = statement.IndexOf('(');
         if (openParen < 0)
@@ -132,10 +140,24 @@ internal static class CreateScriptSnapshotBuilder
 
             if (line.StartsWith("CONSTRAINT", StringComparison.OrdinalIgnoreCase)
                 || line.StartsWith("PRIMARY KEY", StringComparison.OrdinalIgnoreCase)
-                || line.StartsWith("FOREIGN KEY", StringComparison.OrdinalIgnoreCase)
                 || line.StartsWith("UNIQUE", StringComparison.OrdinalIgnoreCase)
                 || line.StartsWith("CHECK", StringComparison.OrdinalIgnoreCase))
             {
+                if (TryParseForeignKey(line, schema, name, defaultSchema, out var fk))
+                {
+                    foreignKeys.Add(fk);
+                }
+
+                continue;
+            }
+
+            if (line.StartsWith("FOREIGN KEY", StringComparison.OrdinalIgnoreCase))
+            {
+                if (TryParseForeignKey(line, schema, name, defaultSchema, out var fk))
+                {
+                    foreignKeys.Add(fk);
+                }
+
                 continue;
             }
 
@@ -355,6 +377,73 @@ internal static class CreateScriptSnapshotBuilder
         }
 
         index = new IndexSchema(schema, table, indexName, columns, isUnique);
+        return true;
+    }
+
+    private static bool TryParseForeignKey(string line, string schema, string table, string defaultSchema, out ForeignKeySchema foreignKey)
+    {
+        foreignKey = default!;
+        var normalized = line.Trim();
+        var name = $"FK_{table}_{Math.Abs(normalized.GetHashCode())}";
+
+        if (normalized.StartsWith("CONSTRAINT", StringComparison.OrdinalIgnoreCase))
+        {
+            var afterConstraint = normalized["CONSTRAINT".Length..].Trim();
+            var firstSpace = afterConstraint.IndexOf(' ');
+            if (firstSpace > 0)
+            {
+                name = UnquoteIdentifier(afterConstraint[..firstSpace].Trim());
+            }
+        }
+
+        var fkIdx = normalized.IndexOf("FOREIGN KEY", StringComparison.OrdinalIgnoreCase);
+        var refIdx = normalized.IndexOf("REFERENCES", StringComparison.OrdinalIgnoreCase);
+        if (fkIdx < 0 || refIdx < 0 || refIdx <= fkIdx)
+        {
+            return false;
+        }
+
+        var fkOpen = normalized.IndexOf('(', fkIdx);
+        var fkClose = normalized.IndexOf(')', fkOpen + 1);
+        if (fkOpen < 0 || fkClose <= fkOpen)
+        {
+            return false;
+        }
+
+        var fkColumns = normalized[(fkOpen + 1)..fkClose]
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(UnquoteIdentifier)
+            .Select(static c => c.Trim())
+            .Where(static c => !string.IsNullOrWhiteSpace(c))
+            .ToArray();
+        if (fkColumns.Length == 0)
+        {
+            return false;
+        }
+
+        var afterRef = normalized[(refIdx + "REFERENCES".Length)..].Trim();
+        var refOpen = afterRef.IndexOf('(');
+        var refClose = afterRef.IndexOf(')', refOpen + 1);
+        if (refOpen < 0 || refClose <= refOpen)
+        {
+            return false;
+        }
+
+        var refTableToken = afterRef[..refOpen].Trim();
+        ParseQualifiedName(refTableToken, defaultSchema, out var principalSchema, out var principalTable);
+        var principalColumns = afterRef[(refOpen + 1)..refClose]
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(UnquoteIdentifier)
+            .Select(static c => c.Trim())
+            .Where(static c => !string.IsNullOrWhiteSpace(c))
+            .ToArray();
+
+        if (principalColumns.Length != fkColumns.Length)
+        {
+            return false;
+        }
+
+        foreignKey = new ForeignKeySchema(schema, table, name, fkColumns, principalSchema, principalTable, principalColumns);
         return true;
     }
 }

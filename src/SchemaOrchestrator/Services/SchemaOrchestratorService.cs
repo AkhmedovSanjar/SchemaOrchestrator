@@ -187,6 +187,15 @@ public sealed class SchemaOrchestratorService : ISchemaOrchestrator
                 await ExecuteNonQueryAsync(connection, adapter.BuildDropIndexSql(operation.IndexDefinition), cancellationToken);
                 return;
 
+            case SchemaOperationKind.DropForeignKey:
+                if (operation.ForeignKeyDefinition is null)
+                {
+                    throw new InvalidOperationException("DropForeignKey operation requires ForeignKeyDefinition.");
+                }
+
+                await ExecuteNonQueryAsync(connection, adapter.BuildDropForeignKeySql(operation.ForeignKeyDefinition), cancellationToken);
+                return;
+
             case SchemaOperationKind.CreateIndex:
                 if (operation.IndexDefinition is null)
                 {
@@ -194,6 +203,15 @@ public sealed class SchemaOrchestratorService : ISchemaOrchestrator
                 }
 
                 await ExecuteNonQueryAsync(connection, adapter.BuildCreateIndexSql(operation.IndexDefinition), cancellationToken);
+                return;
+
+            case SchemaOperationKind.CreateForeignKey:
+                if (operation.ForeignKeyDefinition is null)
+                {
+                    throw new InvalidOperationException("CreateForeignKey operation requires ForeignKeyDefinition.");
+                }
+
+                await ExecuteNonQueryAsync(connection, adapter.BuildCreateForeignKeySql(operation.ForeignKeyDefinition), cancellationToken);
                 return;
 
             case SchemaOperationKind.ArchiveTable:
@@ -328,6 +346,12 @@ public sealed class SchemaOrchestratorService : ISchemaOrchestrator
             throw new NotSupportedException($"Provider '{adapter.Name}' does not support index operations.");
         }
 
+        if ((operation.Kind == SchemaOperationKind.CreateForeignKey || operation.Kind == SchemaOperationKind.DropForeignKey)
+            && !adapter.Capabilities.SupportsForeignKeys)
+        {
+            throw new NotSupportedException($"Provider '{adapter.Name}' does not support foreign key operations.");
+        }
+
         if ((operation.Kind == SchemaOperationKind.ArchiveColumn || operation.Kind == SchemaOperationKind.ArchiveTable)
             && !adapter.Capabilities.SupportsArchiveRename)
         {
@@ -353,7 +377,10 @@ VALUES
         AddParam(cmd, "@schema_name", operation.Schema);
         AddParam(cmd, "@table_name", operation.Table);
         AddParam(cmd, "@column_name", (object?)operation.Column ?? DBNull.Value);
-        AddParam(cmd, "@index_name", (object?)operation.IndexDefinition?.Name ?? DBNull.Value);
+        AddParam(
+            cmd,
+            "@index_name",
+            (object?)operation.IndexDefinition?.Name ?? (object?)operation.ForeignKeyDefinition?.Name ?? DBNull.Value);
         AddParam(cmd, "@started_at_utc", DateTime.UtcNow);
         AddParam(cmd, "@status", "running");
         await cmd.ExecuteNonQueryAsync(cancellationToken);

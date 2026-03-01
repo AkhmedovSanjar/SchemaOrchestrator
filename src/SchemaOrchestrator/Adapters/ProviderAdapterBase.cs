@@ -23,6 +23,8 @@ public abstract class ProviderAdapterBase : IProviderAdapter
     public abstract string BuildAlterColumnSql(TableSchema table, ColumnSchema currentColumn, ColumnSchema desiredColumn);
     public abstract string BuildCreateIndexSql(IndexSchema index);
     public abstract string BuildDropIndexSql(IndexSchema index);
+    public abstract string BuildCreateForeignKeySql(ForeignKeySchema foreignKey);
+    public abstract string BuildDropForeignKeySql(ForeignKeySchema foreignKey);
     public abstract string BuildRenameTableSql(string schema, string table, string newTableName);
     public abstract string BuildRenameColumnSql(string schema, string table, string column, string newColumnName);
     public abstract string BuildDropTableSql(string schema, string table);

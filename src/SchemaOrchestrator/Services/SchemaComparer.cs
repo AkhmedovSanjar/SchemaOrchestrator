@@ -8,6 +8,7 @@ public sealed class SchemaComparer : ISchemaComparer
     public IReadOnlyList<SchemaOperation> Compare(DatabaseSchema current, DatabaseSchema desired, DestructiveChangePolicy policy)
     {
         var operations = new List<SchemaOperation>();
+        var changedColumnKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         var currentTables = current.Tables.ToDictionary(static t => t.Key, StringComparer.OrdinalIgnoreCase);
         var desiredTables = desired.Tables.ToDictionary(static t => t.Key, StringComparer.OrdinalIgnoreCase);
@@ -43,6 +44,7 @@ public sealed class SchemaComparer : ISchemaComparer
 
                 if (HasDefinitionChanged(currentColumn, desiredColumn))
                 {
+                    changedColumnKeys.Add(BuildColumnKey(desiredTable.Schema, desiredTable.Name, desiredColumn.Name));
                     operations.Add(new SchemaOperation(
                         Kind: SchemaOperationKind.AlterColumn,
                         Schema: desiredTable.Schema,
@@ -92,6 +94,7 @@ public sealed class SchemaComparer : ISchemaComparer
         }
 
         AddIndexOperations(operations, current, desired);
+        AddForeignKeyOperations(operations, current, desired, changedColumnKeys);
 
         return OrderOperations(operations);
     }
@@ -191,13 +194,90 @@ public sealed class SchemaComparer : ISchemaComparer
 
     private static int GetOrder(SchemaOperationKind kind) => kind switch
     {
+        SchemaOperationKind.DropForeignKey => 5,
         SchemaOperationKind.DropIndex => 10,
         SchemaOperationKind.CreateTable => 20,
         SchemaOperationKind.AddColumn => 30,
         SchemaOperationKind.AlterColumn => 40,
         SchemaOperationKind.CreateIndex => 50,
+        SchemaOperationKind.CreateForeignKey => 55,
         SchemaOperationKind.ArchiveColumn => 60,
         SchemaOperationKind.ArchiveTable => 70,
         _ => 999
     };
+
+    private static void AddForeignKeyOperations(
+        List<SchemaOperation> operations,
+        DatabaseSchema current,
+        DatabaseSchema desired,
+        IReadOnlySet<string> changedColumnKeys)
+    {
+        var currentBySignature = current.ForeignKeys.ToDictionary(f => f.SignatureKey, StringComparer.OrdinalIgnoreCase);
+        var desiredBySignature = desired.ForeignKeys.ToDictionary(f => f.SignatureKey, StringComparer.OrdinalIgnoreCase);
+        var droppedSignatures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var createdSignatures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var removed in current.ForeignKeys.Where(f => !desiredBySignature.ContainsKey(f.SignatureKey)))
+        {
+            droppedSignatures.Add(removed.SignatureKey);
+            operations.Add(new SchemaOperation(
+                Kind: SchemaOperationKind.DropForeignKey,
+                Schema: removed.Schema,
+                Table: removed.Table,
+                ForeignKeyDefinition: removed));
+        }
+
+        foreach (var desiredFk in desired.ForeignKeys)
+        {
+            if (!currentBySignature.ContainsKey(desiredFk.SignatureKey))
+            {
+                createdSignatures.Add(desiredFk.SignatureKey);
+                operations.Add(new SchemaOperation(
+                    Kind: SchemaOperationKind.CreateForeignKey,
+                    Schema: desiredFk.Schema,
+                    Table: desiredFk.Table,
+                    ForeignKeyDefinition: desiredFk));
+            }
+        }
+
+        // Recreate unchanged FK definitions if dependent columns changed.
+        foreach (var currentFk in current.ForeignKeys)
+        {
+            if (!desiredBySignature.TryGetValue(currentFk.SignatureKey, out var desiredFk))
+            {
+                continue;
+            }
+
+            var impacted = currentFk.Columns.Any(col => changedColumnKeys.Contains(BuildColumnKey(currentFk.Schema, currentFk.Table, col)))
+                || currentFk.PrincipalColumns.Any(col => changedColumnKeys.Contains(BuildColumnKey(currentFk.PrincipalSchema, currentFk.PrincipalTable, col)));
+
+            if (!impacted)
+            {
+                continue;
+            }
+
+            if (!droppedSignatures.Contains(currentFk.SignatureKey))
+            {
+                droppedSignatures.Add(currentFk.SignatureKey);
+                operations.Add(new SchemaOperation(
+                    Kind: SchemaOperationKind.DropForeignKey,
+                    Schema: currentFk.Schema,
+                    Table: currentFk.Table,
+                    ForeignKeyDefinition: currentFk));
+            }
+
+            if (!createdSignatures.Contains(desiredFk.SignatureKey))
+            {
+                createdSignatures.Add(desiredFk.SignatureKey);
+                operations.Add(new SchemaOperation(
+                    Kind: SchemaOperationKind.CreateForeignKey,
+                    Schema: desiredFk.Schema,
+                    Table: desiredFk.Table,
+                    ForeignKeyDefinition: desiredFk));
+            }
+        }
+    }
+
+    private static string BuildColumnKey(string schema, string table, string column) =>
+        $"{schema}.{table}.{column}";
 }

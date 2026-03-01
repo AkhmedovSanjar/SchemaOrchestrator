@@ -174,6 +174,7 @@ var cleaned = await dbContext.CleanupArchivedObjectsAsync();
 - TTL cleanup worker implemented (`CleanupArchivedObjectsAsync`)
 - Create-script snapshot parsing implemented (`GenerateCreateScript` -> schema snapshot)
 - Index diff/planning implemented (`CreateIndex`/`DropIndex` operations)
+- Foreign key diff/planning implemented (`CreateForeignKey`/`DropForeignKey` operations)
 - Subscriber attribute discovery implemented (`OnUpgradeStarted`, `BeforeOperation`, etc.)
 - Restore/undelete API implemented (`RestoreArchivedObjectAsync`)
 - Operation checkpoint table implemented (`so_upgrade_operations`)
@@ -181,7 +182,7 @@ var cleaned = await dbContext.CleanupArchivedObjectsAsync();
 ## Tracked implementation checklist
 
 - [x] Step 1: True temporary snapshot from EF create script and live-vs-temp comparison
-- [ ] Step 2: Constraint/index/foreign-key operation coverage + dependency-safe ordering (indexes + ordering done, FK/constraints pending)
+- [x] Step 2: Constraint/index/foreign-key operation coverage + dependency-safe ordering (FK + index coverage and ordering implemented)
 - [x] Step 3: SQLite table-rebuild flow for unsupported alters with data copy
 - [x] Step 4: Attribute-based subscriber discovery + richer execution context APIs
 - [x] Step 5: Restore/undelete lifecycle and cleanup dry-run mode

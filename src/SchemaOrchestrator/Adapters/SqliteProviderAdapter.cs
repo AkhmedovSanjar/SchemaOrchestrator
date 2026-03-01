@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS so_upgrade_operations (
         }
 
         var indexes = new List<IndexSchema>();
+        var foreignKeys = new List<ForeignKeySchema>();
         foreach (var tableName in tableNames)
         {
             await using var indexListCmd = connection.CreateCommand();
@@ -139,9 +140,42 @@ CREATE TABLE IF NOT EXISTS so_upgrade_operations (
 
                 indexes.Add(new IndexSchema(DefaultSchema, tableName, indexName, cols.OrderBy(c => c.Seq).Select(c => c.Name).ToArray(), unique));
             }
+
+            await using var fkCmd = connection.CreateCommand();
+            fkCmd.CommandText = $"PRAGMA foreign_key_list({QuoteIdentifier(tableName)});";
+            await using var fkReader = await fkCmd.ExecuteReaderAsync(cancellationToken);
+            var fkGrouped = new Dictionary<int, (string RefTable, List<(int Seq, string From, string To)> Cols)>();
+            while (await fkReader.ReadAsync(cancellationToken))
+            {
+                var id = fkReader.GetInt32(0);
+                var seq = fkReader.GetInt32(1);
+                var refTable = fkReader.GetString(2);
+                var fromCol = fkReader.GetString(3);
+                var toCol = fkReader.GetString(4);
+                if (!fkGrouped.TryGetValue(id, out var state))
+                {
+                    state = (refTable, new List<(int, string, string)>());
+                }
+
+                state.Cols.Add((seq, fromCol, toCol));
+                fkGrouped[id] = state;
+            }
+
+            foreach (var kvp in fkGrouped)
+            {
+                var name = $"FK_{tableName}_{kvp.Key}";
+                foreignKeys.Add(new ForeignKeySchema(
+                    DefaultSchema,
+                    tableName,
+                    name,
+                    kvp.Value.Cols.OrderBy(c => c.Seq).Select(c => c.From).ToArray(),
+                    DefaultSchema,
+                    kvp.Value.RefTable,
+                    kvp.Value.Cols.OrderBy(c => c.Seq).Select(c => c.To).ToArray()));
+            }
         }
 
-        return new DatabaseSchema { Tables = tables, Indexes = indexes };
+        return new DatabaseSchema { Tables = tables, Indexes = indexes, ForeignKeys = foreignKeys };
     }
 
     public override string QuoteIdentifier(string identifier) => $"\"{identifier}\"";
@@ -167,6 +201,12 @@ CREATE TABLE IF NOT EXISTS so_upgrade_operations (
 
     public override string BuildDropIndexSql(IndexSchema index) =>
         $"DROP INDEX {QuoteIdentifier(index.Name)};";
+
+    public override string BuildCreateForeignKeySql(ForeignKeySchema foreignKey) =>
+        throw new NotSupportedException("SQLite add foreign key requires table rebuild and is not supported as a standalone operation.");
+
+    public override string BuildDropForeignKeySql(ForeignKeySchema foreignKey) =>
+        throw new NotSupportedException("SQLite drop foreign key requires table rebuild and is not supported as a standalone operation.");
 
     public override string BuildRenameTableSql(string schema, string table, string newTableName) =>
         $"ALTER TABLE {QuoteIdentifier(table)} RENAME TO {QuoteIdentifier(newTableName)};";
