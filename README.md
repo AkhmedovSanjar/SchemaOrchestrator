@@ -149,13 +149,12 @@ It will use one provider-neutral pattern:
 ```csharp
 services.AddSchemaOrchestrator(options =>
 {
-    options.UseProviderAutoDetect();
     options.MigrationsPolicy = DestructiveChangePolicy.Archive;
+    options.ArchiveTtl = TimeSpan.FromDays(30);
 });
 
-await dbContext.Database.UpgradeSchemaAsync(new UpgradeOptions
+await dbContext.UpgradeSchemaAsync(new UpgradeOptions
 {
-    Features = ["Billing", "Identity"],
     EnableDataSubscribers = true,
     DryRun = false
 });
@@ -163,6 +162,8 @@ await dbContext.Database.UpgradeSchemaAsync(new UpgradeOptions
 
 ## Current status
 
-- Concept defined
-- Reference architecture drafted
-- Implementation plan staged
+- Core library implemented (`net9.0`)
+- Provider adapters implemented: SQL Server, PostgreSQL, SQLite
+- Shared metadata-table archive pattern implemented (`so_archived_objects`)
+- Upgrade lifecycle tables implemented (`so_upgrade_history`, `so_locks`)
+- EF Core extension methods implemented (`AddSchemaOrchestrator`, `UpgradeSchemaAsync`)

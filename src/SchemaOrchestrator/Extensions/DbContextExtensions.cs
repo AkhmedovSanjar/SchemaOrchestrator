@@ -1,0 +1,16 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
+using SchemaOrchestrator.Abstractions;
+using SchemaOrchestrator.Models;
+
+namespace SchemaOrchestrator.Extensions;
+
+public static class DbContextExtensions
+{
+    public static Task<UpgradeReport> UpgradeSchemaAsync(this DbContext dbContext, UpgradeOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        var service = dbContext.GetService<ISchemaOrchestrator>();
+        return service.UpgradeSchemaAsync(dbContext, options, cancellationToken);
+    }
+}
