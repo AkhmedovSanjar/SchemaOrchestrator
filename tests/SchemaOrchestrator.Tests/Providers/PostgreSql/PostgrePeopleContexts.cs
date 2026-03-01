@@ -171,3 +171,91 @@ internal sealed class PostgreFkChildV2
     public long ParentId { get; set; }
 }
 
+internal sealed class PostgreConstraintV1Context : DbContext
+{
+    public PostgreConstraintV1Context(DbContextOptions<PostgreConstraintV1Context> options) : base(options) { }
+    public DbSet<PostgreConstraintEntityV1> Items => Set<PostgreConstraintEntityV1>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<PostgreConstraintEntityV1>(b =>
+        {
+            b.ToTable("constraint_items", "public");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Code).HasMaxLength(50);
+            b.Property(x => x.Rank).HasDefaultValue(1);
+            b.HasIndex(x => x.Code).IsUnique().HasDatabaseName("ux_constraint_items_code");
+            b.ToTable(t => t.HasCheckConstraint("ck_constraint_items_code", "length(\"Code\") > 0"));
+        });
+    }
+}
+
+internal sealed class PostgreConstraintV2Context : DbContext
+{
+    public PostgreConstraintV2Context(DbContextOptions<PostgreConstraintV2Context> options) : base(options) { }
+    public DbSet<PostgreConstraintEntityV2> Items => Set<PostgreConstraintEntityV2>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<PostgreConstraintEntityV2>(b =>
+        {
+            b.ToTable("constraint_items", "public");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Code).HasMaxLength(80);
+            b.Property(x => x.Rank).HasDefaultValue(2);
+            b.HasIndex(x => x.Code).IsUnique().HasDatabaseName("ux_constraint_items_code_v2");
+            b.ToTable(t => t.HasCheckConstraint("ck_constraint_items_code_v2", "length(\"Code\") >= 1"));
+        });
+    }
+}
+
+internal sealed class PostgreLargeSchemaV1Context : DbContext
+{
+    public PostgreLargeSchemaV1Context(DbContextOptions<PostgreLargeSchemaV1Context> options) : base(options) { }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        for (var i = 1; i <= 12; i++)
+        {
+            var entity = modelBuilder.SharedTypeEntity<Dictionary<string, object>>($"PostgreLargeV1_{i}");
+            entity.ToTable($"large_table_{i}", "public");
+            entity.Property<int>("Id");
+            entity.HasKey("Id");
+            entity.Property<string>("Name").HasMaxLength(100);
+        }
+    }
+}
+
+internal sealed class PostgreLargeSchemaV2Context : DbContext
+{
+    public PostgreLargeSchemaV2Context(DbContextOptions<PostgreLargeSchemaV2Context> options) : base(options) { }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        for (var i = 1; i <= 12; i++)
+        {
+            var entity = modelBuilder.SharedTypeEntity<Dictionary<string, object>>($"PostgreLargeV2_{i}");
+            entity.ToTable($"large_table_{i}", "public");
+            entity.Property<int>("Id");
+            entity.HasKey("Id");
+            entity.Property<string>("Name").HasMaxLength(120);
+            entity.Property<string>("Extra").HasMaxLength(40);
+            entity.HasIndex("Name").HasDatabaseName($"ix_large_table_{i}_name");
+        }
+    }
+}
+
+internal sealed class PostgreConstraintEntityV1
+{
+    public int Id { get; set; }
+    public string Code { get; set; } = string.Empty;
+    public int Rank { get; set; }
+}
+
+internal sealed class PostgreConstraintEntityV2
+{
+    public int Id { get; set; }
+    public string Code { get; set; } = string.Empty;
+    public int Rank { get; set; }
+}
+

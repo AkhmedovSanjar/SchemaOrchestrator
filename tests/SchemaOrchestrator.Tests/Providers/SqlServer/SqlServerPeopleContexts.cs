@@ -171,3 +171,91 @@ internal sealed class SqlServerFkChildV2
     public long ParentId { get; set; }
 }
 
+internal sealed class SqlServerConstraintV1Context : DbContext
+{
+    public SqlServerConstraintV1Context(DbContextOptions<SqlServerConstraintV1Context> options) : base(options) { }
+    public DbSet<SqlServerConstraintEntityV1> Items => Set<SqlServerConstraintEntityV1>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<SqlServerConstraintEntityV1>(b =>
+        {
+            b.ToTable("ConstraintItems");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Code).HasMaxLength(50);
+            b.Property(x => x.Rank).HasDefaultValue(1);
+            b.HasIndex(x => x.Code).IsUnique().HasDatabaseName("UX_ConstraintItems_Code");
+            b.ToTable(t => t.HasCheckConstraint("CK_ConstraintItems_Code", "LEN([Code]) > 0"));
+        });
+    }
+}
+
+internal sealed class SqlServerConstraintV2Context : DbContext
+{
+    public SqlServerConstraintV2Context(DbContextOptions<SqlServerConstraintV2Context> options) : base(options) { }
+    public DbSet<SqlServerConstraintEntityV2> Items => Set<SqlServerConstraintEntityV2>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<SqlServerConstraintEntityV2>(b =>
+        {
+            b.ToTable("ConstraintItems");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Code).HasMaxLength(80);
+            b.Property(x => x.Rank).HasDefaultValue(2);
+            b.HasIndex(x => x.Code).IsUnique().HasDatabaseName("UX_ConstraintItems_Code_V2");
+            b.ToTable(t => t.HasCheckConstraint("CK_ConstraintItems_Code_V2", "LEN([Code]) >= 1"));
+        });
+    }
+}
+
+internal sealed class SqlServerLargeSchemaV1Context : DbContext
+{
+    public SqlServerLargeSchemaV1Context(DbContextOptions<SqlServerLargeSchemaV1Context> options) : base(options) { }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        for (var i = 1; i <= 12; i++)
+        {
+            var entity = modelBuilder.SharedTypeEntity<Dictionary<string, object>>($"SqlServerLargeV1_{i}");
+            entity.ToTable($"LargeTable{i}");
+            entity.Property<int>("Id");
+            entity.HasKey("Id");
+            entity.Property<string>("Name").HasMaxLength(100);
+        }
+    }
+}
+
+internal sealed class SqlServerLargeSchemaV2Context : DbContext
+{
+    public SqlServerLargeSchemaV2Context(DbContextOptions<SqlServerLargeSchemaV2Context> options) : base(options) { }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        for (var i = 1; i <= 12; i++)
+        {
+            var entity = modelBuilder.SharedTypeEntity<Dictionary<string, object>>($"SqlServerLargeV2_{i}");
+            entity.ToTable($"LargeTable{i}");
+            entity.Property<int>("Id");
+            entity.HasKey("Id");
+            entity.Property<string>("Name").HasMaxLength(120);
+            entity.Property<string>("Extra").HasMaxLength(40);
+            entity.HasIndex("Name").HasDatabaseName($"IX_LargeTable{i}_Name");
+        }
+    }
+}
+
+internal sealed class SqlServerConstraintEntityV1
+{
+    public int Id { get; set; }
+    public string Code { get; set; } = string.Empty;
+    public int Rank { get; set; }
+}
+
+internal sealed class SqlServerConstraintEntityV2
+{
+    public int Id { get; set; }
+    public string Code { get; set; } = string.Empty;
+    public int Rank { get; set; }
+}
+
