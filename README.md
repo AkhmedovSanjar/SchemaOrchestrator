@@ -172,3 +172,20 @@ var cleaned = await dbContext.CleanupArchivedObjectsAsync();
 - Type/nullability change detection implemented (`AlterColumn` operation)
 - Subscriber hook pipeline implemented (`ISchemaUpgradeSubscriber`)
 - TTL cleanup worker implemented (`CleanupArchivedObjectsAsync`)
+- Create-script snapshot parsing implemented (`GenerateCreateScript` -> schema snapshot)
+- Index diff/planning implemented (`CreateIndex`/`DropIndex` operations)
+- Subscriber attribute discovery implemented (`OnUpgradeStarted`, `BeforeOperation`, etc.)
+- Restore/undelete API implemented (`RestoreArchivedObjectAsync`)
+- Operation checkpoint table implemented (`so_upgrade_operations`)
+
+## Tracked implementation checklist
+
+- [x] Step 1: True temporary snapshot from EF create script and live-vs-temp comparison
+- [ ] Step 2: Constraint/index/foreign-key operation coverage + dependency-safe ordering (indexes + ordering done, FK/constraints pending)
+- [x] Step 3: SQLite table-rebuild flow for unsupported alters with data copy
+- [x] Step 4: Attribute-based subscriber discovery + richer execution context APIs
+- [x] Step 5: Restore/undelete lifecycle and cleanup dry-run mode
+- [x] Step 6: Resumable checkpoints + richer structured diagnostics
+- [x] Step 7: Provider capability matrix and planner-level policy enforcement
+- [x] Step 8: Provider integration tests + scenario tests (baseline SQLite integration tests implemented)
+- [x] Step 9: NuGet packaging metadata and release-ready artifacts (initial package metadata configured)

@@ -7,6 +7,7 @@ public interface IProviderAdapter
 {
     string Name { get; }
     string DefaultSchema { get; }
+    ProviderCapabilities Capabilities { get; }
 
     bool CanHandle(string providerName);
 
@@ -24,6 +25,8 @@ public interface IProviderAdapter
     string BuildCreateTableSql(TableSchema table);
     string BuildAddColumnSql(TableSchema table, ColumnSchema column);
     string BuildAlterColumnSql(TableSchema table, ColumnSchema currentColumn, ColumnSchema desiredColumn);
+    string BuildCreateIndexSql(IndexSchema index);
+    string BuildDropIndexSql(IndexSchema index);
     string BuildRenameTableSql(string schema, string table, string newTableName);
     string BuildRenameColumnSql(string schema, string table, string column, string newColumnName);
     string BuildDropTableSql(string schema, string table);

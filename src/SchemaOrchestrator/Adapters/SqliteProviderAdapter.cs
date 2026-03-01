@@ -7,6 +7,12 @@ public sealed class SqliteProviderAdapter : ProviderAdapterBase
 {
     public override string Name => "sqlite";
     public override string DefaultSchema => "main";
+    public override ProviderCapabilities Capabilities => new(
+        SupportsInPlaceColumnAlter: false,
+        SupportsIndexes: true,
+        SupportsArchiveRename: true,
+        SupportsForeignKeys: false,
+        SupportsCheckConstraints: false);
     public override bool SupportsInPlaceColumnAlter => false;
 
     public override bool CanHandle(string providerName) =>
@@ -42,6 +48,20 @@ CREATE TABLE IF NOT EXISTS so_locks (
     lock_name TEXT PRIMARY KEY,
     owner TEXT NOT NULL,
     acquired_at_utc TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS so_upgrade_operations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    history_id INTEGER NOT NULL,
+    operation_kind TEXT NOT NULL,
+    schema_name TEXT NOT NULL,
+    table_name TEXT NOT NULL,
+    column_name TEXT NULL,
+    index_name TEXT NULL,
+    started_at_utc TEXT NOT NULL,
+    completed_at_utc TEXT NULL,
+    status TEXT NOT NULL,
+    error TEXT NULL
 );";
 
         await using var cmd = connection.CreateCommand();
@@ -86,7 +106,42 @@ CREATE TABLE IF NOT EXISTS so_locks (
             });
         }
 
-        return new DatabaseSchema { Tables = tables };
+        var indexes = new List<IndexSchema>();
+        foreach (var tableName in tableNames)
+        {
+            await using var indexListCmd = connection.CreateCommand();
+            indexListCmd.CommandText = $"PRAGMA index_list({QuoteIdentifier(tableName)});";
+
+            await using var indexListReader = await indexListCmd.ExecuteReaderAsync(cancellationToken);
+            var tableIndexes = new List<(string Name, bool IsUnique)>();
+            while (await indexListReader.ReadAsync(cancellationToken))
+            {
+                var indexName = indexListReader.GetString(1);
+                var unique = indexListReader.GetInt32(2) == 1;
+                if (indexName.StartsWith("sqlite_autoindex_", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                tableIndexes.Add((indexName, unique));
+            }
+
+            foreach (var (indexName, unique) in tableIndexes)
+            {
+                await using var infoCmd = connection.CreateCommand();
+                infoCmd.CommandText = $"PRAGMA index_info({QuoteIdentifier(indexName)});";
+                await using var infoReader = await infoCmd.ExecuteReaderAsync(cancellationToken);
+                var cols = new List<(int Seq, string Name)>();
+                while (await infoReader.ReadAsync(cancellationToken))
+                {
+                    cols.Add((infoReader.GetInt32(0), infoReader.GetString(2)));
+                }
+
+                indexes.Add(new IndexSchema(DefaultSchema, tableName, indexName, cols.OrderBy(c => c.Seq).Select(c => c.Name).ToArray(), unique));
+            }
+        }
+
+        return new DatabaseSchema { Tables = tables, Indexes = indexes };
     }
 
     public override string QuoteIdentifier(string identifier) => $"\"{identifier}\"";
@@ -102,6 +157,16 @@ CREATE TABLE IF NOT EXISTS so_locks (
 
     public override string BuildAlterColumnSql(TableSchema table, ColumnSchema currentColumn, ColumnSchema desiredColumn) =>
         throw new NotSupportedException("SQLite in-place alter column is not supported by this adapter.");
+
+    public override string BuildCreateIndexSql(IndexSchema index)
+    {
+        var unique = index.IsUnique ? "UNIQUE " : string.Empty;
+        var columns = string.Join(", ", index.Columns.Select(QuoteIdentifier));
+        return $"CREATE {unique}INDEX {QuoteIdentifier(index.Name)} ON {QuoteIdentifier(index.Table)} ({columns});";
+    }
+
+    public override string BuildDropIndexSql(IndexSchema index) =>
+        $"DROP INDEX {QuoteIdentifier(index.Name)};";
 
     public override string BuildRenameTableSql(string schema, string table, string newTableName) =>
         $"ALTER TABLE {QuoteIdentifier(table)} RENAME TO {QuoteIdentifier(newTableName)};";

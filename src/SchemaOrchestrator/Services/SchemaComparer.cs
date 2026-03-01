@@ -49,6 +49,7 @@ public sealed class SchemaComparer : ISchemaComparer
                         Table: desiredTable.Name,
                         Column: desiredColumn.Name,
                         CurrentColumnDefinition: currentColumn,
+                        CurrentTableDefinition: currentTable,
                         ColumnDefinition: desiredColumn,
                         TableDefinition: desiredTable));
                 }
@@ -90,7 +91,9 @@ public sealed class SchemaComparer : ISchemaComparer
             }
         }
 
-        return operations;
+        AddIndexOperations(operations, current, desired);
+
+        return OrderOperations(operations);
     }
 
     private static bool IsOrchestratorInternalTable(string tableName) =>
@@ -106,4 +109,95 @@ public sealed class SchemaComparer : ISchemaComparer
     }
 
     private static string NormalizeStoreType(string value) => value.Replace(" ", string.Empty);
+
+    private static void AddIndexOperations(List<SchemaOperation> operations, DatabaseSchema current, DatabaseSchema desired)
+    {
+        var currentIndexes = current.Indexes.ToDictionary(static i => i.Key, StringComparer.OrdinalIgnoreCase);
+        var desiredIndexes = desired.Indexes.ToDictionary(static i => i.Key, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var removed in current.Indexes.Where(i => !desiredIndexes.ContainsKey(i.Key)))
+        {
+            if (removed.Name.StartsWith("so_", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            operations.Add(new SchemaOperation(
+                Kind: SchemaOperationKind.DropIndex,
+                Schema: removed.Schema,
+                Table: removed.Table,
+                IndexDefinition: removed));
+        }
+
+        foreach (var desiredIndex in desired.Indexes)
+        {
+            if (!currentIndexes.TryGetValue(desiredIndex.Key, out var currentIndex))
+            {
+                operations.Add(new SchemaOperation(
+                    Kind: SchemaOperationKind.CreateIndex,
+                    Schema: desiredIndex.Schema,
+                    Table: desiredIndex.Table,
+                    IndexDefinition: desiredIndex));
+                continue;
+            }
+
+            if (HasIndexChanged(currentIndex, desiredIndex))
+            {
+                operations.Add(new SchemaOperation(
+                    Kind: SchemaOperationKind.DropIndex,
+                    Schema: currentIndex.Schema,
+                    Table: currentIndex.Table,
+                    IndexDefinition: currentIndex));
+                operations.Add(new SchemaOperation(
+                    Kind: SchemaOperationKind.CreateIndex,
+                    Schema: desiredIndex.Schema,
+                    Table: desiredIndex.Table,
+                    IndexDefinition: desiredIndex));
+            }
+        }
+    }
+
+    private static bool HasIndexChanged(IndexSchema current, IndexSchema desired)
+    {
+        if (current.IsUnique != desired.IsUnique)
+        {
+            return true;
+        }
+
+        if (current.Columns.Count != desired.Columns.Count)
+        {
+            return true;
+        }
+
+        for (var i = 0; i < current.Columns.Count; i++)
+        {
+            if (!string.Equals(current.Columns[i], desired.Columns[i], StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static IReadOnlyList<SchemaOperation> OrderOperations(IEnumerable<SchemaOperation> operations)
+    {
+        return operations
+            .OrderBy(op => GetOrder(op.Kind))
+            .ThenBy(op => op.Schema, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(op => op.Table, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static int GetOrder(SchemaOperationKind kind) => kind switch
+    {
+        SchemaOperationKind.DropIndex => 10,
+        SchemaOperationKind.CreateTable => 20,
+        SchemaOperationKind.AddColumn => 30,
+        SchemaOperationKind.AlterColumn => 40,
+        SchemaOperationKind.CreateIndex => 50,
+        SchemaOperationKind.ArchiveColumn => 60,
+        SchemaOperationKind.ArchiveTable => 70,
+        _ => 999
+    };
 }

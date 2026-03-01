@@ -10,6 +10,7 @@ public abstract class ProviderAdapterBase : IProviderAdapter
 {
     public abstract string Name { get; }
     public abstract string DefaultSchema { get; }
+    public abstract ProviderCapabilities Capabilities { get; }
 
     public abstract bool CanHandle(string providerName);
     public abstract Task EnsureOrchestratorTablesAsync(DbConnection connection, CancellationToken cancellationToken);
@@ -20,6 +21,8 @@ public abstract class ProviderAdapterBase : IProviderAdapter
     public abstract string BuildCreateTableSql(TableSchema table);
     public abstract string BuildAddColumnSql(TableSchema table, ColumnSchema column);
     public abstract string BuildAlterColumnSql(TableSchema table, ColumnSchema currentColumn, ColumnSchema desiredColumn);
+    public abstract string BuildCreateIndexSql(IndexSchema index);
+    public abstract string BuildDropIndexSql(IndexSchema index);
     public abstract string BuildRenameTableSql(string schema, string table, string newTableName);
     public abstract string BuildRenameColumnSql(string schema, string table, string column, string newColumnName);
     public abstract string BuildDropTableSql(string schema, string table);

@@ -7,6 +7,12 @@ public sealed class SqlServerProviderAdapter : ProviderAdapterBase
 {
     public override string Name => "sqlserver";
     public override string DefaultSchema => "dbo";
+    public override ProviderCapabilities Capabilities => new(
+        SupportsInPlaceColumnAlter: true,
+        SupportsIndexes: true,
+        SupportsArchiveRename: true,
+        SupportsForeignKeys: true,
+        SupportsCheckConstraints: true);
     public override bool SupportsInPlaceColumnAlter => true;
 
     public override bool CanHandle(string providerName) =>
@@ -50,6 +56,23 @@ BEGIN
         lock_name NVARCHAR(100) NOT NULL PRIMARY KEY,
         owner NVARCHAR(100) NOT NULL,
         acquired_at_utc DATETIME2 NOT NULL
+    );
+END;
+
+IF OBJECT_ID(N'so_upgrade_operations', N'U') IS NULL
+BEGIN
+    CREATE TABLE so_upgrade_operations (
+        id BIGINT IDENTITY(1,1) PRIMARY KEY,
+        history_id BIGINT NOT NULL,
+        operation_kind NVARCHAR(50) NOT NULL,
+        schema_name NVARCHAR(128) NOT NULL,
+        table_name NVARCHAR(128) NOT NULL,
+        column_name NVARCHAR(128) NULL,
+        index_name NVARCHAR(128) NULL,
+        started_at_utc DATETIME2 NOT NULL,
+        completed_at_utc DATETIME2 NULL,
+        status NVARCHAR(20) NOT NULL,
+        error NVARCHAR(MAX) NULL
     );
 END;";
 
@@ -97,6 +120,51 @@ WHERE t.TABLE_TYPE = 'BASE TABLE';";
             cols.Add(new ColumnSchema(column, type, nullable));
         }
 
+        var indexes = new List<IndexSchema>();
+        await using (var indexCmd = connection.CreateCommand())
+        {
+            indexCmd.CommandText = @"
+SELECT
+    s.name AS schema_name,
+    t.name AS table_name,
+    i.name AS index_name,
+    i.is_unique,
+    c.name AS column_name,
+    ic.key_ordinal
+FROM sys.indexes i
+JOIN sys.tables t ON i.object_id = t.object_id
+JOIN sys.schemas s ON t.schema_id = s.schema_id
+JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+WHERE i.is_primary_key = 0
+  AND i.is_unique_constraint = 0
+  AND i.type > 0
+  AND i.name IS NOT NULL
+ORDER BY s.name, t.name, i.name, ic.key_ordinal;";
+
+            await using var indexReader = await indexCmd.ExecuteReaderAsync(cancellationToken);
+            var grouped = new Dictionary<string, (string Schema, string Table, string Name, bool Unique, List<(int Ordinal, string Column)> Columns)>(StringComparer.OrdinalIgnoreCase);
+            while (await indexReader.ReadAsync(cancellationToken))
+            {
+                var schema = indexReader.GetString(0);
+                var table = indexReader.GetString(1);
+                var indexName = indexReader.GetString(2);
+                var unique = indexReader.GetBoolean(3);
+                var columnName = indexReader.GetString(4);
+                var ordinal = indexReader.GetInt32(5);
+                var key = $"{schema}.{table}.{indexName}";
+                if (!grouped.TryGetValue(key, out var state))
+                {
+                    state = (schema, table, indexName, unique, new List<(int, string)>());
+                }
+
+                state.Columns.Add((ordinal, columnName));
+                grouped[key] = state;
+            }
+
+            indexes.AddRange(grouped.Values.Select(g => new IndexSchema(g.Schema, g.Table, g.Name, g.Columns.OrderBy(x => x.Ordinal).Select(x => x.Column).ToArray(), g.Unique)));
+        }
+
         return new DatabaseSchema
         {
             Tables = tableMap.Select(kvp => new TableSchema
@@ -104,7 +172,8 @@ WHERE t.TABLE_TYPE = 'BASE TABLE';";
                 Schema = keyParts[kvp.Key].Schema,
                 Name = keyParts[kvp.Key].Table,
                 Columns = kvp.Value
-            }).ToArray()
+            }).ToArray(),
+            Indexes = indexes
         };
     }
 
@@ -129,6 +198,16 @@ WHERE t.TABLE_TYPE = 'BASE TABLE';";
         var nullableToken = desiredColumn.IsNullable ? "NULL" : "NOT NULL";
         return $"ALTER TABLE {schemaPrefix}{QuoteIdentifier(table.Name)} ALTER COLUMN {QuoteIdentifier(desiredColumn.Name)} {desiredColumn.StoreType} {nullableToken};";
     }
+
+    public override string BuildCreateIndexSql(IndexSchema index)
+    {
+        var unique = index.IsUnique ? "UNIQUE " : string.Empty;
+        var columns = string.Join(", ", index.Columns.Select(QuoteIdentifier));
+        return $"CREATE {unique}INDEX {QuoteIdentifier(index.Name)} ON {QuoteIdentifier(index.Schema)}.{QuoteIdentifier(index.Table)} ({columns});";
+    }
+
+    public override string BuildDropIndexSql(IndexSchema index) =>
+        $"DROP INDEX {QuoteIdentifier(index.Name)} ON {QuoteIdentifier(index.Schema)}.{QuoteIdentifier(index.Table)};";
 
     public override string BuildRenameTableSql(string schema, string table, string newTableName) =>
         $"EXEC sp_rename '{schema}.{table}', '{newTableName}';";

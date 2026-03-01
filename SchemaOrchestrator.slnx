@@ -2,4 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/SchemaOrchestrator/SchemaOrchestrator.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SchemaOrchestrator.Tests/SchemaOrchestrator.Tests.csproj" />
+  </Folder>
 </Solution>

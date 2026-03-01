@@ -7,6 +7,12 @@ public sealed class PostgreSqlProviderAdapter : ProviderAdapterBase
 {
     public override string Name => "postgresql";
     public override string DefaultSchema => "public";
+    public override ProviderCapabilities Capabilities => new(
+        SupportsInPlaceColumnAlter: true,
+        SupportsIndexes: true,
+        SupportsArchiveRename: true,
+        SupportsForeignKeys: true,
+        SupportsCheckConstraints: true);
     public override bool SupportsInPlaceColumnAlter => true;
 
     public override bool CanHandle(string providerName) =>
@@ -43,6 +49,20 @@ CREATE TABLE IF NOT EXISTS so_locks (
     lock_name VARCHAR(100) PRIMARY KEY,
     owner VARCHAR(100) NOT NULL,
     acquired_at_utc TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS so_upgrade_operations (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    history_id BIGINT NOT NULL,
+    operation_kind VARCHAR(50) NOT NULL,
+    schema_name VARCHAR(128) NOT NULL,
+    table_name VARCHAR(128) NOT NULL,
+    column_name VARCHAR(128) NULL,
+    index_name VARCHAR(128) NULL,
+    started_at_utc TIMESTAMP NOT NULL,
+    completed_at_utc TIMESTAMP NULL,
+    status VARCHAR(20) NOT NULL,
+    error TEXT NULL
 );";
 
         await using var cmd = connection.CreateCommand();
@@ -90,6 +110,35 @@ WHERE t.table_type = 'BASE TABLE'
             cols.Add(new ColumnSchema(column, type, nullable));
         }
 
+        var indexes = new List<IndexSchema>();
+        await using (var indexCmd = connection.CreateCommand())
+        {
+            indexCmd.CommandText = @"
+SELECT
+    schemaname,
+    tablename,
+    indexname,
+    indexdef
+FROM pg_indexes
+WHERE schemaname NOT IN ('pg_catalog', 'information_schema');";
+
+            await using var indexReader = await indexCmd.ExecuteReaderAsync(cancellationToken);
+            while (await indexReader.ReadAsync(cancellationToken))
+            {
+                var schema = indexReader.GetString(0);
+                var table = indexReader.GetString(1);
+                var name = indexReader.GetString(2);
+                var indexDef = indexReader.GetString(3);
+                if (!TryParsePgIndexColumns(indexDef, out var columns))
+                {
+                    continue;
+                }
+
+                var isUnique = indexDef.StartsWith("CREATE UNIQUE INDEX", StringComparison.OrdinalIgnoreCase);
+                indexes.Add(new IndexSchema(schema, table, name, columns, isUnique));
+            }
+        }
+
         return new DatabaseSchema
         {
             Tables = tableMap.Select(kvp => new TableSchema
@@ -97,7 +146,8 @@ WHERE t.table_type = 'BASE TABLE'
                 Schema = keyParts[kvp.Key].Schema,
                 Name = keyParts[kvp.Key].Table,
                 Columns = kvp.Value
-            }).ToArray()
+            }).ToArray(),
+            Indexes = indexes
         };
     }
 
@@ -128,6 +178,16 @@ WHERE t.table_type = 'BASE TABLE'
             nullableSql;
     }
 
+    public override string BuildCreateIndexSql(IndexSchema index)
+    {
+        var unique = index.IsUnique ? "UNIQUE " : string.Empty;
+        var columns = string.Join(", ", index.Columns.Select(QuoteIdentifier));
+        return $"CREATE {unique}INDEX {QuoteIdentifier(index.Name)} ON {QuoteIdentifier(index.Schema)}.{QuoteIdentifier(index.Table)} ({columns});";
+    }
+
+    public override string BuildDropIndexSql(IndexSchema index) =>
+        $"DROP INDEX {QuoteIdentifier(index.Schema)}.{QuoteIdentifier(index.Name)};";
+
     public override string BuildRenameTableSql(string schema, string table, string newTableName) =>
         $"ALTER TABLE {QuoteIdentifier(schema)}.{QuoteIdentifier(table)} RENAME TO {QuoteIdentifier(newTableName)};";
 
@@ -151,5 +211,25 @@ WHERE t.table_type = 'BASE TABLE'
         var nullableToken = column.IsNullable ? "NULL" : "NOT NULL";
         var pkToken = column.IsPrimaryKey ? " PRIMARY KEY" : string.Empty;
         return $"{QuoteIdentifier(column.Name)} {column.StoreType} {nullableToken}{pkToken}";
+    }
+
+    private static bool TryParsePgIndexColumns(string indexDef, out IReadOnlyList<string> columns)
+    {
+        columns = Array.Empty<string>();
+        var open = indexDef.LastIndexOf('(');
+        var close = indexDef.LastIndexOf(')');
+        if (open < 0 || close <= open)
+        {
+            return false;
+        }
+
+        var raw = indexDef[(open + 1)..close];
+        columns = raw
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(c => c.Trim().Trim('"'))
+            .Where(static c => !string.IsNullOrWhiteSpace(c))
+            .ToArray();
+
+        return columns.Count > 0;
     }
 }

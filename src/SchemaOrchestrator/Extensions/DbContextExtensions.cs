@@ -14,9 +14,15 @@ public static class DbContextExtensions
         return service.UpgradeSchemaAsync(dbContext, options, cancellationToken);
     }
 
-    public static Task<int> CleanupArchivedObjectsAsync(this DbContext dbContext, CancellationToken cancellationToken = default)
+    public static Task<int> CleanupArchivedObjectsAsync(this DbContext dbContext, bool dryRun = false, CancellationToken cancellationToken = default)
     {
         var service = dbContext.GetService<ISchemaCleanupWorker>();
-        return service.CleanupArchivedObjectsAsync(dbContext, cancellationToken);
+        return service.CleanupArchivedObjectsAsync(dbContext, dryRun, cancellationToken);
+    }
+
+    public static Task<bool> RestoreArchivedObjectAsync(this DbContext dbContext, long archiveId, CancellationToken cancellationToken = default)
+    {
+        var service = dbContext.GetService<ISchemaCleanupWorker>();
+        return service.RestoreArchivedObjectAsync(dbContext, archiveId, cancellationToken);
     }
 }

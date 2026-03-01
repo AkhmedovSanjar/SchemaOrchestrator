@@ -4,6 +4,8 @@ using SchemaOrchestrator.Abstractions;
 using SchemaOrchestrator.Adapters;
 using SchemaOrchestrator.Models;
 using SchemaOrchestrator.Services;
+using SchemaOrchestrator.Subscribers;
+using System.Reflection;
 
 namespace SchemaOrchestrator.Extensions;
 
@@ -27,6 +29,17 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISchemaOrchestrator, SchemaOrchestratorService>();
         services.AddScoped<ISchemaCleanupWorker, SchemaCleanupWorker>();
         services.TryAddEnumerable(ServiceDescriptor.Scoped<ISchemaUpgradeSubscriber, NoOpSchemaUpgradeSubscriber>());
+
+        return services;
+    }
+
+    public static IServiceCollection AddSchemaOrchestratorSubscribersFromAssemblies(this IServiceCollection services, params Assembly[] assemblies)
+    {
+        var subscribers = SubscriberDiscovery.Discover(assemblies);
+        foreach (var subscriber in subscribers)
+        {
+            services.AddSingleton(typeof(ISchemaUpgradeSubscriber), subscriber);
+        }
 
         return services;
     }

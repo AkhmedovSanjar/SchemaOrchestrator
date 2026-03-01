@@ -7,5 +7,7 @@ public sealed record SchemaOperation(
     string? Column = null,
     string? ArchiveName = null,
     ColumnSchema? CurrentColumnDefinition = null,
+    TableSchema? CurrentTableDefinition = null,
     ColumnSchema? ColumnDefinition = null,
-    TableSchema? TableDefinition = null);
+    TableSchema? TableDefinition = null,
+    IndexSchema? IndexDefinition = null);
