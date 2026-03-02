@@ -203,6 +203,16 @@ Provider integration tests use environment variables:
 - `SO_TEST_SQLSERVER_CONN`
 - `SO_TEST_POSTGRES_CONN`
 
+CI workflows:
+
+- `.github/workflows/ci.yml`:
+  - build + SQLite/unit tests
+  - SQL Server integration tests
+  - PostgreSQL integration tests (version matrix)
+  - provider/package compatibility matrix (.NET SDK versions)
+- `.github/workflows/pack-validate.yml`:
+  - NuGet pack validation + local package smoke-install
+
 ## Tracked implementation checklist
 
 - [x] Step 1: True temporary snapshot from EF create script and live-vs-temp comparison

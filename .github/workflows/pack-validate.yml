@@ -1,0 +1,36 @@
+name: Pack Validate
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+    paths:
+      - "src/SchemaOrchestrator/**"
+      - "README.md"
+      - ".github/workflows/pack-validate.yml"
+
+jobs:
+  pack-and-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore SchemaOrchestrator.slnx
+
+      - name: Pack
+        run: dotnet pack src/SchemaOrchestrator/SchemaOrchestrator.csproj -c Release -o artifacts --no-restore
+
+      - name: Validate nupkg exists
+        run: ls -la artifacts
+
+      - name: Create smoke app
+        run: |
+          dotnet new console -n PackSmoke -o pack-smoke
+          dotnet nuget add source ./artifacts -n local-artifacts
+          cd pack-smoke
+          dotnet add package SchemaOrchestrator --version 0.1.0-alpha.1 --source ../artifacts
+          dotnet build -c Release
