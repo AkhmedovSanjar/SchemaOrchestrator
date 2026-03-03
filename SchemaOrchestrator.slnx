@@ -1,4 +1,9 @@
 <Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/SchemaOrchestrator.Samples.PostgreSql/SchemaOrchestrator.Samples.PostgreSql.csproj" />
+    <Project Path="samples/SchemaOrchestrator.Samples.Sqlite/SchemaOrchestrator.Samples.Sqlite.csproj" />
+    <Project Path="samples/SchemaOrchestrator.Samples.SqlServer/SchemaOrchestrator.Samples.SqlServer.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/SchemaOrchestrator/SchemaOrchestrator.csproj" />
   </Folder>

@@ -25,6 +25,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SchemaOrchestrator\SchemaOrchestrator.csproj" />
+    <ProjectReference Include="..\..\samples\SchemaOrchestrator.Samples.Sqlite\SchemaOrchestrator.Samples.Sqlite.csproj" />
+    <ProjectReference Include="..\..\samples\SchemaOrchestrator.Samples.SqlServer\SchemaOrchestrator.Samples.SqlServer.csproj" />
+    <ProjectReference Include="..\..\samples\SchemaOrchestrator.Samples.PostgreSql\SchemaOrchestrator.Samples.PostgreSql.csproj" />
   </ItemGroup>
 
 </Project>

@@ -162,6 +162,16 @@ await dbContext.UpgradeSchemaAsync(new UpgradeOptions
 var cleaned = await dbContext.CleanupArchivedObjectsAsync();
 ```
 
+## Sample projects
+
+Runnable examples are in [`samples/README.md`](/c:/Users/sanjar/Desktop/SchemaOrchestrator/samples/README.md):
+
+- [`samples/SchemaOrchestrator.Samples.Sqlite`](/c:/Users/sanjar/Desktop/SchemaOrchestrator/samples/SchemaOrchestrator.Samples.Sqlite/Program.cs)
+- [`samples/SchemaOrchestrator.Samples.SqlServer`](/c:/Users/sanjar/Desktop/SchemaOrchestrator/samples/SchemaOrchestrator.Samples.SqlServer/Program.cs)
+- [`samples/SchemaOrchestrator.Samples.PostgreSql`](/c:/Users/sanjar/Desktop/SchemaOrchestrator/samples/SchemaOrchestrator.Samples.PostgreSql/Program.cs)
+
+Each sample demonstrates `init-v1`, `upgrade-v2`, `dry-run`, `cleanup`, and `restore-latest-archive`.
+
 ## Current status
 
 - Core library implemented (`net9.0`)
